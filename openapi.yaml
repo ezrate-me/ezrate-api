@@ -1,0 +1,229 @@
+openapi: 3.1.0
+info:
+  title: EZRate API — Iran exchange rates, gold, coin and crypto prices
+  version: "1.0"
+  description: |
+    Live Iranian free-market prices (US dollar, euro, dirham, lira and 20+ currencies, 18k/24k gold, mithqal,
+    gold ounce, Emami and Bahar Azadi coins, USDT, Bitcoin and other crypto) in Toman, Rial or any other asset.
+    Get a free key at https://ezrate.me/auth/register/en — docs: https://ezrate.me/api/en
+  contact: { name: EZRate, url: https://ezrate.me, email: api@ezrate.me }
+  termsOfService: https://ezrate.me/legal/terms/en
+servers:
+  - url: https://api.ezrate.me/v1
+security:
+  - apiKey: []
+  - bearer: []
+tags:
+  - { name: Rates, description: Live prices }
+  - { name: History, description: Candles for charts }
+  - { name: Conversion, description: Converter and cross rates }
+  - { name: Account }
+paths:
+  /assets:
+    get:
+      tags: [Rates]
+      summary: Assets and their symbols
+      parameters:
+        - { name: category, in: query, schema: { $ref: '#/components/schemas/Category' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Asset' } } } } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /rates:
+    get:
+      tags: [Rates]
+      summary: Live prices of several assets
+      parameters:
+        - { name: symbols, in: query, description: 'Comma-separated symbols (empty = all), e.g. usd,eur,g18,emami,usdt', schema: { type: string }, example: 'usd,g18,emami,usdt' }
+        - { name: category, in: query, schema: { $ref: '#/components/schemas/Category' } }
+        - { name: market, in: query, schema: { type: string, default: tehran } }
+        - { $ref: '#/components/parameters/Quote' }
+        - { $ref: '#/components/parameters/Lang' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Rate' } }
+                  meta: { $ref: '#/components/schemas/Meta' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /rates/{symbol}:
+    get:
+      tags: [Rates]
+      summary: One asset, with its price in every market
+      parameters:
+        - { $ref: '#/components/parameters/Symbol' }
+        - { name: market, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Rate'
+                      - type: object
+                        properties: { markets: { type: array, items: { $ref: '#/components/schemas/Rate' } } }
+        '404': { $ref: '#/components/responses/Error' }
+  /history/{symbol}:
+    get:
+      tags: [History]
+      summary: OHLC candles (max 1000; depth depends on the plan)
+      parameters:
+        - { $ref: '#/components/parameters/Symbol' }
+        - { name: interval, in: query, schema: { type: string, enum: ['1h', '1d'], default: '1d' } }
+        - { name: from, in: query, schema: { type: string, format: date }, example: '2026-09-01' }
+        - { name: to, in: query, schema: { type: string, format: date }, example: '2026-10-01' }
+        - { name: market, in: query, schema: { type: string, default: tehran } }
+        - { name: quote, in: query, schema: { type: string, enum: [IRT, IRR], default: IRT } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Candle' } }
+                  meta: { type: object, properties: { symbol: { type: string }, interval: { type: string }, market: { type: string }, quote: { type: string }, count: { type: integer } } }
+  /convert:
+    get:
+      tags: [Conversion]
+      summary: Convert an amount between two assets (irt = Toman, irr = Rial)
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string }, example: usd }
+        - { name: to, in: query, required: true, schema: { type: string }, example: eur }
+        - { name: amount, in: query, schema: { type: number, default: 1 }, example: 100 }
+        - { name: side, in: query, schema: { type: string, enum: [sell, buy, mid], default: sell } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      from: { type: string }
+                      to: { type: string }
+                      amount: { type: number }
+                      side: { type: string }
+                      rate: { type: number }
+                      inverse_rate: { type: number }
+                      result: { type: number }
+                      as_of: { type: string, format: date-time }
+              example: { data: { from: usd, to: eur, amount: 100, side: sell, rate: 0.89231034, inverse_rate: 1.12068633, result: 89.23103389, as_of: '2026-10-14T11:07:42Z' } }
+  /cross:
+    get:
+      tags: [Conversion]
+      summary: How many units of each symbol one base is worth (mid price)
+      parameters:
+        - { name: base, in: query, required: true, schema: { type: string }, example: usd }
+        - { name: symbols, in: query, schema: { type: string }, example: 'eur,aed,irt' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example: { data: { base: usd, side: mid, rates: { eur: 0.89273416, aed: 3.68724221, irt: 259250 } }, meta: { as_of: '2026-10-14T11:07:42Z', freshness_sec: 1800 } }
+  /global:
+    get:
+      tags: [Conversion]
+      summary: World exchange rates against a base currency
+      parameters:
+        - { name: base, in: query, schema: { type: string, default: USD } }
+      responses:
+        '200': { description: OK }
+  /markets/{symbol}:
+    get:
+      tags: [Rates]
+      summary: The asset's price in each market
+      parameters:
+        - { $ref: '#/components/parameters/Symbol' }
+      responses:
+        '200': { description: OK }
+  /usage:
+    get:
+      tags: [Account]
+      summary: Your plan and today's / this month's usage (does not count toward the quota)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example: { data: { plan: free, day: { used: 12, limit: 50 }, month: { used: 12, limit: 1500 }, freshness_sec: 1800 } }
+components:
+  securitySchemes:
+    apiKey: { type: apiKey, in: header, name: X-API-Key }
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    Symbol: { name: symbol, in: path, required: true, schema: { type: string }, example: usd }
+    Quote:
+      name: quote
+      in: query
+      description: 'Unit of the prices: IRT (Toman), IRR (Rial) or any asset symbol (usd, usdt, eur, g18…)'
+      schema: { type: string, default: IRT }
+    Lang: { name: lang, in: query, schema: { type: string, enum: [fa, en] } }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: object, properties: { code: { type: string, example: invalid_api_key }, message: { type: string } } }
+  schemas:
+    Category: { type: string, enum: [fiat, gold, coin, crypto] }
+    Rate:
+      type: object
+      properties:
+        symbol: { type: string, example: usd }
+        code: { type: string, example: USD }
+        name: { type: string, example: US Dollar }
+        category: { $ref: '#/components/schemas/Category' }
+        market: { type: string, example: tehran }
+        quote: { type: string, example: IRT }
+        buy: { type: number, example: 259150 }
+        sell: { type: number, example: 259350 }
+        usd: { type: [string, 'null'], description: 'price in USD (gold and crypto)', example: null }
+        change_pct: { type: number, description: '24-hour change, %', example: 0.12 }
+        sources: { type: integer, example: 13 }
+        low_sources: { type: boolean }
+        updated_at: { type: string, format: date-time }
+    Asset:
+      type: object
+      properties:
+        symbol: { type: string }
+        code: { type: string }
+        name: { type: string }
+        name_fa: { type: string }
+        name_en: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
+        slug: { type: string }
+        unit: { type: string }
+        decimals: { type: integer }
+        markets: { type: array, items: { type: string } }
+        icon_url: { type: string }
+    Candle:
+      type: object
+      properties:
+        t: { type: string, format: date-time }
+        o: { type: number }
+        h: { type: number }
+        l: { type: number }
+        c: { type: number }
+    Meta:
+      type: object
+      properties:
+        as_of: { type: string, format: date-time }
+        freshness_sec: { type: integer }
+        quote: { type: string }
