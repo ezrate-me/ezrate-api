@@ -128,12 +128,26 @@ paths:
       parameters:
         - { name: base, in: query, required: true, schema: { type: string }, example: usd }
         - { name: symbols, in: query, schema: { type: string }, example: 'eur,aed,irt' }
+        - { name: source, in: query, schema: { type: string, enum: [tehran, world] }, description: 'tehran (default, Tehran free market) or world (world rates, any ISO currency)' }
       responses:
         '200':
           description: OK
           content:
             application/json:
               example: { data: { base: usd, side: mid, rates: { eur: 0.89273416, aed: 3.68724221, irt: 259250 } }, meta: { as_of: '2026-10-14T11:07:42Z', freshness_sec: 1800 } }
+  /pairs:
+    get:
+      tags: [Conversion]
+      summary: Many currency pairs in one request (world rates; Toman / Rial pairs from the Tehran free market)
+      parameters:
+        - { name: pairs, in: query, required: true, schema: { type: string }, example: 'eur-usd,aed-try,btc-eur,usd-irt', description: 'Up to 25 pairs, e.g. EUR-USD or EUR/USD' }
+        - { name: amount, in: query, schema: { type: number }, example: 1 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example: { data: { pairs: [ { pair: EUR-USD, from: eur, to: usd, rate: 1.16279, inverse_rate: 0.86, amount: 1, result: 1.16279, source: world }, { pair: USD-IRT, from: usd, to: irt, rate: 112450, inverse_rate: 0.0000089, amount: 1, result: 112450, source: tehran_free_market } ] }, meta: { as_of: '2026-11-01T10:00:00Z', freshness_sec: 1800 } }
   /global:
     get:
       tags: [Conversion]
